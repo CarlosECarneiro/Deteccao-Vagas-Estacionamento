@@ -9,9 +9,12 @@ CAMINHO_VIDEOS = os.path.join("Video")
 class App:
     def __init__(self, root):
         self.root = root
-        self.root.title("Processamento de Vídeo com YOLO")
+        self.root.title("Detecção de Vagas")
 
+        # Guarda o caminho do vídeo escolhido
         self.video_path = ""
+
+        # Guarda o tipo de operação escolhida
         self.operacao = tk.StringVar(value="detectar")
 
         # Botão para selecionar vídeo
@@ -37,19 +40,28 @@ class App:
         self.btn_executar.pack(pady=20)
 
     def selecionar_video(self):
-        arquivo = filedialog.askopenfilename(initialdir=CAMINHO_VIDEOS, title="Selecionar Vídeo",
-                                             filetypes=(("Arquivos de vídeo", "*.mp4 *.avi *.mov"), ("Todos os arquivos", "*.*")))
+        # Abre janela para selecionar vídeo
+        arquivo = filedialog.askopenfilename(
+            initialdir=CAMINHO_VIDEOS,
+            title="Selecionar Vídeo",
+            filetypes=(("Arquivos de vídeo", "*.mp4 *.avi *.mov"), ("Todos os arquivos", "*.*"))
+        )
+
+        # Se o usuário escolher um arquivo, salva o caminho e mostra o nome
         if arquivo:
             self.video_path = arquivo
             self.label_video.config(text=os.path.basename(arquivo), fg="black")
 
     def executar_operacao(self):
+        # Verifica se o usuário escolheu um vídeo
         if not self.video_path:
             messagebox.showwarning("Atenção", "Por favor, selecione um vídeo.")
             return
 
+        # Lê a operação escolhida nos botões
         operacao = self.operacao.get()
         
+        # Seleciona qual script deve ser executado
         if operacao == "detectarCanny":
             script = "deteccaoCanny.py"
         elif operacao == "detectarYOLO":
@@ -62,11 +74,14 @@ class App:
             messagebox.showerror("Erro", "Operação desconhecida.")
             return
 
+        # Tenta executar o script escolhido passando o vídeo como parâmetro
         try:
             subprocess.Popen(["python", script, self.video_path])
         except subprocess.CalledProcessError as e:
             messagebox.showerror("Erro", f"Erro ao executar o script:\n{e}")
 
+
+# Inicia a interface gráfica
 if __name__ == "__main__":
     root = tk.Tk()
     app = App(root)

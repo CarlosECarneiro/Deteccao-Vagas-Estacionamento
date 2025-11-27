@@ -6,23 +6,24 @@ import csv
 import pandas as pd
 from ultralytics import YOLO
 
-# Caminho do vídeo
+# Recebe o caminho do vídeo enviado pelo main
 video_path = sys.argv[1]
 nome_video = os.path.splitext(os.path.basename(video_path))[0]
 
-# Modelo YOLOv8 COCO pré-treinado
+# Carrega o modelo YOLOv8 pré-treinado
 model = YOLO("yolov8s.pt")
 
-# Saída da detecção frame a frame
+# Define caminhos dos arquivos CSV
 csv_pred = f"Output\\detec_yolov8_{nome_video}.csv"
+vagas_path = f"Vagas\\vagas_{nome_video}.csv"
+csv_true = f"Video\\ground_truth_{nome_video}.csv"
+csv_out  = f"Output\\yolov8_metrics_{nome_video}.csv"
 
-# Coordenadas das vagas
-vagas_path = f"Video\\vagas_{nome_video}.csv"
+# Lê o CSV com coordenadas e IDs das vagas
 df_vagas = pd.read_csv(vagas_path)
-vagas = [tuple(row) for row in df_vagas.values]
-
-
-
+vagas = [(int(row["SlotId"]), int(row["X"]), int(row["Y"]),
+            int(row["W"]), int(row["H"]))
+            for _, row in df_vagas.iterrows()]
 
 # Função de interseção entre caixas
 def intersects(boxA, boxB):
@@ -32,52 +33,56 @@ def intersects(boxA, boxB):
 
 # Abre o vídeo
 cap = cv2.VideoCapture(video_path)
-fps = cap.get(cv2.CAP_PROP_FPS)
-total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-duration_sec = total_frames / fps
-print(f"FPS: {fps}, Total de frames: {total_frames}, Duração: {duration_sec:.2f} segundos")
+# Cabeçalho do CSV com SlotIds
+colunas = ["frame"] + [f"vaga{slot_id}" for slot_id, *_ in vagas]
 
-# Prepara CSV
-with open(csv_pred, mode="w", newline="") as file:
+# Abre CSV de saída para gravar predições
+with open(csv_pred, mode="w", newline="", encoding="utf-8") as file:
     writer = csv.writer(file)
-    header = ["frame"] + [f"vaga_{i}" for i in range(len(vagas))]
-    writer.writerow(header)
+    writer.writerow(colunas)
 
     frame_number = 0
     while True:
         ret, frame = cap.read()
+
+        # Se não conseguir ler mais frames, fim do vídeo
         if not ret:
             break
 
-        # Faz a inferência com YOLOv8
+        # Realiza a detecção com YOLO
         results = model(frame, stream=True)
 
+        # lista de carros encontrados
         carros = []
+
         for r in results:
             for box in r.boxes:
-                cls = int(box.cls[0])
-                conf = float(box.conf[0])
+                cls = int(box.cls[0])   # tipo do objeto
+                conf = float(box.conf[0])   # confiança da detecção
+
+                # Detecta apenas carros com confiança > 0.5
                 if model.names[cls] == "car" and conf > 0.5:
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     w, h = x2 - x1, y2 - y1
                     carros.append((x1, y1, w, h))
 
-        # Verifica ocupação das vagas
-        ocupacao_frame = []
-        for vaga in vagas:
-            ocupada = any(intersects(vaga, carro) for carro in carros)
-            ocupacao_frame.append(1 if ocupada else 0)
+        # Verifica ocupação por vaga
+        linha = [frame_number]
+        for slot_id, x, y, w, h in vagas:
 
-        # Escreve no CSV
-        writer.writerow([frame_number] + ocupacao_frame)
+            # Marca vaga como ocupada se intersectar com algum carro
+            ocupada = any(intersects((x, y, w, h), carro) for carro in carros)
+
+            # Adiciona o status da vaga à linha do frame
+            linha.append(1 if ocupada else 0)
+
+        # Escreve resultado do frame no CSV
+        writer.writerow(linha)
         frame_number += 1
 
 cap.release()
-print(f" Predições salvas em: {csv_pred}")
+
+print(f"CSV de ocupação salvo como {csv_pred}")
 
 # Chama o script de comparação de métricas
-# Argumentos: pred, ground truth, saída
-csv_true = f"Video\\ground_truth_{nome_video}.csv"
-csv_out  = f"Output\\yolov8_metrics_{nome_video}.csv"
-
 subprocess.run(["python", "comparar_metricas.py", csv_pred, csv_true, csv_out])

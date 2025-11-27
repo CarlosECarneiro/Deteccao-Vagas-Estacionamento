@@ -1,30 +1,45 @@
 import sys
 import pandas as pd
 from sklearn.metrics import confusion_matrix
+import tkinter as tk
+from tkinter import messagebox
 
-# Arquivos
-csv_pred = sys.argv[1] # saídas da detecção
-csv_true = sys.argv[2] # anotações manuais
-csv_out  = sys.argv[3] # saída com métricas
+# Recebe o caminho dos arquivos CSV
+csv_pred = sys.argv[1]  # Saída da detecção (predito)
+csv_true = sys.argv[2]  # Ground truth (real)
+csv_out  = sys.argv[3]  # Saída com métricas
 
-# Lê CSVs
+# Lê os CSV da detecção e o ground truth
 df_pred = pd.read_csv(csv_pred)
 df_true = pd.read_csv(csv_true)
 
-# Remove coluna "frame" (mantém só as vagas)
-y_pred = df_pred.drop(columns=["frame"]).values.flatten()
-y_true = df_true.drop(columns=["frame"]).values.flatten()
+# Remove a coluna "frame"
+df_pred = df_pred.drop(columns=["frame"], errors="ignore")
+df_true = df_true.drop(columns=["frame"], errors="ignore")
 
-# Calcula matriz de confusão
-tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0,1]).ravel()
+# Garante que as colunas estão na mesma ordem
+colunas_comuns = sorted(set(df_pred.columns) & set(df_true.columns))
+if not colunas_comuns:
+    raise ValueError("Nenhuma vaga em comum entre os arquivos predito e ground truth!")
 
-# Métricas
+# Redefine com a mesma ordem
+df_pred = df_pred[colunas_comuns]
+df_true = df_true[colunas_comuns]
+
+# Converte todos os valores em um vetor 1D
+y_pred = df_pred.values.flatten()
+y_true = df_true.values.flatten()
+
+# Calcula a matriz de confusão: TN, FP, FN, TP
+tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+
+# Calcula métricas de classificação
 accuracy = (tp + tn) / (tp + tn + fp + fn)
 precision = tp / (tp + fp) if (tp + fp) > 0 else 0
 recall = tp / (tp + fn) if (tp + fn) > 0 else 0
 f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
 
-# Cria DataFrame com os resultados
+# Salva resultados
 df_result = pd.DataFrame([{
     "TP": tp,
     "TN": tn,
@@ -35,16 +50,13 @@ df_result = pd.DataFrame([{
     "Recall": recall,
     "F1-Score": f1
 }])
-# Salva em CSV
+
+# Salva métricas no CSV de saída
 df_result.to_csv(csv_out, index=False)
 
-# Exibe no terminal (opcional)
+# Exibe resultados
 print("TP,TN,FP,FN,Accuracy,Precision,Recall,F1-Score")
 print(f"{tp},{tn},{fp},{fn},{accuracy},{precision},{recall},{f1}")
-
-# Mostra em janela com tkinter
-import tkinter as tk
-from tkinter import messagebox
 
 mensagem = (
     f"TP: {tp}\n"
@@ -57,6 +69,7 @@ mensagem = (
     f"F1-Score:  {f1:.4f}"
 )
 
+# Exibe mensagem em janela do Tkinter
 root = tk.Tk()
 root.withdraw()
 messagebox.showinfo("Métricas de Avaliação", mensagem)
